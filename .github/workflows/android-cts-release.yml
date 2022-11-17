@@ -13,19 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
       - name: Install ninja-build tool
         uses: seanmiddleditch/gha-setup-ninja@v3
+
       - name: set up JDK 11
-        uses: actions/setup-java@v2
+        uses: actions/setup-java@v3.6.0
         with:
           java-version: "11"
-          distribution: "adopt"
+          distribution: "temurin"
           cache: gradle
 
-      - name: Build OpenXR-CTS for Android
-        run: |
-          cd src/conformance
-          ./gradlew clean && ./gradlew assembleRelease
+      - uses: gradle/gradle-build-action@v2
+        with:
+          arguments: assembleRelease
+          build-root-directory: src/conformance
 
       - name: Sign OpenXR-CTS Android release
         uses: r0adkll/sign-android-release@349ebdef58775b1e0d8099458af0816dc79b6407
@@ -39,20 +41,21 @@ jobs:
         env:
           BUILD_TOOLS_VERSION: "30.0.3"
 
+      - name: Upload OpenXR-CTS Android
+        uses: actions/upload-artifact@v3
+        with:
+          name: OpenXR-CTS Android
+          path: ${{ steps.sign_cts.outputs.signedReleaseFile }}
+
       - name: Rename APK
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           SIGNED_FILE: ${{ steps.sign_cts.outputs.signedReleaseFile }}
           TAGNAME: ${{ github.event.release.tag_name }}
         run: mv $SIGNED_FILE $TAGNAME.apk
 
-      - name: Upload OpenXR-CTS Android
-        uses: actions/upload-artifact@v2
-        # if: startsWith(github.ref, 'refs/tags/')
-        with:
-          name: OpenXR-CTS Android
-          path: ${{ github.event.release.tag_name }}.apk
       - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
-        # if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ github.event.release.tag_name }}.apk
