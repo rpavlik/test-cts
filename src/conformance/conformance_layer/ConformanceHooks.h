@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -128,4 +128,16 @@ struct ConformanceHooks : ConformanceHooksBase
 #endif
 
 private:
+    /// fallback for event types for which we have no further verification
+    void checkEventPayload(const void*)
+    {
+    }
+    void checkEventPayload(const XrEventDataEventsLost* data);
+    void checkEventPayload(const XrEventDataInstanceLossPending* data);
+    void checkEventPayload(const XrEventDataSessionStateChanged* data);
+    void checkEventPayload(const XrEventDataReferenceSpaceChangePending* data);
+    void checkEventPayload(const XrEventDataInteractionProfileChanged* data);
+    void checkEventPayload(const XrEventDataVisibilityMaskChangedKHR* data);
+    void checkEventPayload(const XrEventDataPerfSettingsEXT* data);
+    void checkEventPayload(const XrEventDataSpatialAnchorCreateCompleteFB* data);
 };

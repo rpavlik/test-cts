@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -14,12 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <memory>
 #include "graphics_plugin.h"
 
 #ifdef XR_USE_GRAPHICS_API_OPENGL
 
 #include "report.h"
-
+#include "swapchain_image_data.h"
+#include "graphics_plugin_impl_helpers.h"
 #include "swapchain_parameters.h"
 
 #include "xr_dependencies.h"
@@ -28,9 +30,10 @@
 #include "throw_helpers.h"
 #include "Geometry.h"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <openxr/openxr_platform.h>
 #include <openxr/openxr.h>
+#include <algorithm>
 #include <thread>
 
 // Why was this needed? hello_xr doesn't need these #defines
@@ -176,7 +179,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, true, true, false, FORMAT, XRC_COLOR_UA_COPY_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COLOR_UA_COPY_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -187,7 +190,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, true, true, false, FORMAT, XRC_COLOR_UA_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COLOR_UA_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -198,7 +201,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, false, true, false, FORMAT, XRC_COLOR_COPY_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, NO_MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COLOR_COPY_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -209,7 +212,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, true, true, false, FORMAT, XRC_COLOR_COPY_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COLOR_COPY_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -220,7 +223,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, false, true, false, FORMAT, XRC_COLOR_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, NO_MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COLOR_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -231,7 +234,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, false, false, false, FORMAT, XRC_DEPTH_COPY_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, NO_MUT_SUPPORT, NON_COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_DEPTH_COPY_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -242,7 +245,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, false, false, false, FORMAT, XRC_DEPTH_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, NO_MUT_SUPPORT, NON_COLOR, UNCOMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_DEPTH_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -253,7 +256,7 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, true, true, true, FORMAT, XRC_COMPRESSED_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, MUT_SUPPORT, COLOR, COMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COMPRESSED_SAMPLED_MUTABLE_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
@@ -264,14 +267,14 @@
 {                                                                              \
     {FORMAT},                                                                  \
     {                                                                          \
-        NAME, false, false, true, true, FORMAT, XRC_COMPRESSED_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
+        NAME, IMMUTABLE, NO_MUT_SUPPORT, COLOR, COMPRESSED, RENDERING_SUPPORT, FORMAT, XRC_COMPRESSED_SAMPLED_USAGE_FLAGS, XRC_ALL_CREATE_FLAGS, {}, {}, \
         {                                                                      \
         }                                                                      \
     }                                                                          \
 }
 #define ADD_GL_COMPRESSED_SAMPLED_FORMAT(X) ADD_GL_COMPRESSED_SAMPLED_FORMAT2(X, #X)
 
-// clang-format off
+// clang-format on
 
 namespace Conformance
 {
@@ -312,6 +315,22 @@ namespace Conformance
         return res;
     }
 
+    inline GLenum TexTarget(bool isArray, bool isMultisample)
+    {
+        if (isArray && isMultisample) {
+            return GL_TEXTURE_2D_MULTISAMPLE_ARRAY;
+        }
+        else if (isMultisample) {
+            return GL_TEXTURE_2D_MULTISAMPLE;
+        }
+        else if (isArray) {
+            return GL_TEXTURE_2D_ARRAY;
+        }
+        else {
+            return GL_TEXTURE_2D;
+        }
+    }
+
 #define XRC_THROW_GL(res, cmd) ThrowGLResult(res, #cmd, XRC_FILE_AND_LINE)
 #define XRC_CHECK_THROW_GLCMD(cmd) CheckThrowGLResult(((cmd), glGetError()), #cmd, XRC_FILE_AND_LINE)
 #define XRC_CHECK_THROW_GLRESULT(res, cmdStr) CheckThrowGLResult(res, cmdStr, XRC_FILE_AND_LINE)
@@ -343,6 +362,164 @@ namespace Conformance
         }
         )_";
 
+    struct OpenGLMesh
+    {
+        bool valid{false};
+        GLuint m_vao{0};
+        GLuint m_vertexBuffer{0};
+        GLuint m_indexBuffer{0};
+        uint32_t m_numIndices;
+
+        OpenGLMesh(GLint vertexAttribCoords, GLint vertexAttribColor,  //
+                   const uint16_t* idx_data, uint32_t idx_count,       //
+                   const Geometry::Vertex* vtx_data, uint32_t vtx_count)
+        {
+            m_numIndices = idx_count;
+
+            XRC_CHECK_THROW_GLCMD(glGenBuffers(1, &m_vertexBuffer));
+            XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer));
+            XRC_CHECK_THROW_GLCMD(glBufferData(GL_ARRAY_BUFFER, vtx_count * sizeof(Geometry::Vertex), vtx_data, GL_STATIC_DRAW));
+
+            XRC_CHECK_THROW_GLCMD(glGenBuffers(1, &m_indexBuffer));
+            XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer));
+            XRC_CHECK_THROW_GLCMD(glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx_count * sizeof(uint16_t), idx_data, GL_STATIC_DRAW));
+
+            XRC_CHECK_THROW_GLCMD(glGenVertexArrays(1, &m_vao));
+            XRC_CHECK_THROW_GLCMD(glBindVertexArray(m_vao));
+            XRC_CHECK_THROW_GLCMD(glEnableVertexAttribArray(vertexAttribCoords));
+            XRC_CHECK_THROW_GLCMD(glEnableVertexAttribArray(vertexAttribColor));
+            XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer));
+            XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer));
+            XRC_CHECK_THROW_GLCMD(glVertexAttribPointer(vertexAttribCoords, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex), nullptr));
+            XRC_CHECK_THROW_GLCMD(glVertexAttribPointer(vertexAttribColor, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex),
+                                                        reinterpret_cast<const void*>(sizeof(XrVector3f))));
+
+            valid = true;
+        }
+
+        OpenGLMesh(OpenGLMesh&& other) noexcept : m_numIndices(0)
+        {
+            using std::swap;
+            swap(valid, other.valid);
+            swap(m_vao, other.m_vao);
+            swap(m_vertexBuffer, other.m_vertexBuffer);
+            swap(m_indexBuffer, other.m_indexBuffer);
+            swap(m_numIndices, other.m_numIndices);
+        }
+
+        OpenGLMesh(const OpenGLMesh&) = delete;
+
+        ~OpenGLMesh()
+        {
+            if (!valid) {
+                return;
+            }
+            if (m_vao != 0) {
+                glDeleteVertexArrays(1, &m_vao);
+            }
+            if (m_vertexBuffer != 0) {
+                glDeleteBuffers(1, &m_vertexBuffer);
+            }
+            if (m_indexBuffer != 0) {
+                glDeleteBuffers(1, &m_indexBuffer);
+            }
+        }
+    };
+
+    struct OpenGLFallbackDepthTexture
+    {
+    public:
+        OpenGLFallbackDepthTexture() = default;
+        ~OpenGLFallbackDepthTexture()
+        {
+            Reset();
+        }
+        void Reset()
+        {
+            if (Allocated()) {
+
+                XRC_CHECK_THROW_GLCMD(glDeleteTextures(1, &m_texture));
+            }
+            m_texture = 0;
+        }
+        bool Allocated() const
+        {
+            return m_texture != 0;
+        }
+
+        void Allocate(GLuint width, GLuint height, uint32_t arraySize, uint32_t sampleCount)
+        {
+            Reset();
+            const bool isArray = arraySize > 1;
+            const bool isMultisample = sampleCount > 1;
+            GLenum target = TexTarget(isArray, isMultisample);
+            XRC_CHECK_THROW_GLCMD(glGenTextures(1, &m_texture));
+            XRC_CHECK_THROW_GLCMD(glBindTexture(target, m_texture));
+            if (!isMultisample) {
+                XRC_CHECK_THROW_GLCMD(glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+                XRC_CHECK_THROW_GLCMD(glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+                XRC_CHECK_THROW_GLCMD(glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+                XRC_CHECK_THROW_GLCMD(glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+            }
+            if (isMultisample) {
+                if (isArray) {
+                    XRC_CHECK_THROW_GLCMD(
+                        glTexImage3DMultisample(target, sampleCount, GL_DEPTH_COMPONENT32, width, height, arraySize, true));
+                }
+                else {
+                    XRC_CHECK_THROW_GLCMD(glTexImage2DMultisample(target, sampleCount, GL_DEPTH_COMPONENT32, width, height, true));
+                }
+            }
+            else {
+                if (isArray) {
+                    XRC_CHECK_THROW_GLCMD(
+                        glTexImage3D(target, 0, GL_DEPTH_COMPONENT32, width, height, arraySize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr));
+                }
+                else {
+                    XRC_CHECK_THROW_GLCMD(
+                        glTexImage2D(target, 0, GL_DEPTH_COMPONENT32, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr));
+                }
+            }
+            m_image.image = m_texture;
+        }
+        const XrSwapchainImageOpenGLKHR& GetTexture() const
+        {
+            return m_image;
+        }
+
+    private:
+        uint32_t m_texture{0};
+        XrSwapchainImageOpenGLKHR m_image{XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR, NULL, 0};
+    };
+    class OpenGLSwapchainImageData : public SwapchainImageDataBase<XrSwapchainImageOpenGLKHR>
+    {
+    public:
+        OpenGLSwapchainImageData(uint32_t capacity, const XrSwapchainCreateInfo& createInfo)
+            : SwapchainImageDataBase(XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR, capacity, createInfo), m_internalDepthTextures(capacity)
+        {
+        }
+
+        OpenGLSwapchainImageData(uint32_t capacity, const XrSwapchainCreateInfo& createInfo, XrSwapchain depthSwapchain,
+                                 const XrSwapchainCreateInfo& depthCreateInfo)
+            : SwapchainImageDataBase(XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR, capacity, createInfo, depthSwapchain, depthCreateInfo)
+            , m_internalDepthTextures(capacity)
+        {
+        }
+
+    protected:
+        const XrSwapchainImageOpenGLKHR& GetFallbackDepthSwapchainImage(uint32_t i) override
+        {
+
+            if (!m_internalDepthTextures[i].Allocated()) {
+                m_internalDepthTextures[i].Allocate(this->Width(), this->Height(), this->ArraySize(), this->SampleCount());
+            }
+
+            return m_internalDepthTextures[i].GetTexture();
+        }
+
+    private:
+        std::vector<OpenGLFallbackDepthTexture> m_internalDepthTextures;
+    };
     struct OpenGLGraphicsPlugin : public IGraphicsPlugin
     {
         OpenGLGraphicsPlugin(const std::shared_ptr<IPlatformPlugin>& /*unused*/);
@@ -372,12 +549,12 @@ namespace Conformance
         void CheckShader(GLuint shader) const;
         void CheckProgram(GLuint prog) const;
 
+        void ClearSwapchainCache() override;
         void ShutdownDevice() override;
 
         const XrBaseInStructure* GetGraphicsBinding() const override;
 
-        void CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, int64_t imageFormat, uint32_t arraySlice,
-                           const RGBAImage& image) override;
+        void CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, uint32_t arraySlice, const RGBAImage& image) override;
 
         std::string GetImageFormatName(int64_t imageFormat) const override;
 
@@ -397,80 +574,20 @@ namespace Conformance
         // Format required by RGBAImage type.
         int64_t GetSRGBA8Format() const override;
 
-        std::shared_ptr<SwapchainImageStructs> AllocateSwapchainImageStructs(size_t size,
-                                                                             const XrSwapchainCreateInfo& swapchainCreateInfo) override;
+        ISwapchainImageData* AllocateSwapchainImageData(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo) override;
+
+        ISwapchainImageData* AllocateSwapchainImageDataWithDepthSwapchain(size_t size,
+                                                                          const XrSwapchainCreateInfo& colorSwapchainCreateInfo,
+                                                                          XrSwapchain depthSwapchain,
+                                                                          const XrSwapchainCreateInfo& depthSwapchainCreateInfo) override;
 
         void ClearImageSlice(const XrSwapchainImageBaseHeader* colorSwapchainImage, uint32_t imageArrayIndex,
-                             int64_t colorSwapchainFormat, XrColor4f bgColor = DarkSlateGrey) override;
+                             XrColor4f bgColor = DarkSlateGrey) override;
+
+        MeshHandle MakeSimpleMesh(span<const uint16_t> idx, span<const Geometry::Vertex> vtx) override;
 
         void RenderView(const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* colorSwapchainImage,
-                        int64_t colorSwapchainFormat, const std::vector<Cube>& cubes) override;
-
-    protected:
-        struct SwapchainImageContext : public IGraphicsPlugin::SwapchainImageStructs
-        {
-            // A packed array of XrSwapchainImageOpenGLKHR's for xrEnumerateSwapchainImages
-            std::vector<XrSwapchainImageOpenGLKHR> swapchainImages;
-            XrSwapchainCreateInfo createInfo{};
-            class ArraySliceState
-            {
-            public:
-                ArraySliceState() = default;
-                ArraySliceState(const ArraySliceState&)
-                {
-                    ReportF("ArraySliceState copy ctor called");
-                }
-                GLuint depthBuffer{0};
-            };
-            std::vector<ArraySliceState> slice;
-
-            SwapchainImageContext() = default;
-            ~SwapchainImageContext() override
-            {
-                Reset();
-            }
-
-            std::vector<XrSwapchainImageBaseHeader*> Create(uint32_t capacity, const XrSwapchainCreateInfo& swapchainCreateInfo)
-            {
-                createInfo = swapchainCreateInfo;
-
-                swapchainImages.resize(capacity);
-                std::vector<XrSwapchainImageBaseHeader*> bases(capacity);
-                for (uint32_t i = 0; i < capacity; ++i) {
-                    swapchainImages[i] = {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR};
-                    bases[i] = reinterpret_cast<XrSwapchainImageBaseHeader*>(&swapchainImages[i]);
-                }
-                slice.resize(swapchainCreateInfo.arraySize);
-                return bases;
-            }
-
-            void Reset()
-            {
-                swapchainImages.clear();
-                createInfo = {};
-                for (const auto& s : slice) {
-                    if (s.depthBuffer) {
-                        XRC_CHECK_THROW_GLCMD(glDeleteTextures(1, &s.depthBuffer));
-                    }
-                }
-                slice.clear();
-            }
-
-            GLuint GetDepthTexture(GLuint level)
-            {
-                if (!slice[level].depthBuffer) {
-                    XRC_CHECK_THROW_GLCMD(glGenTextures(1, &slice[level].depthBuffer));
-                    XRC_CHECK_THROW_GLCMD(glBindTexture(GL_TEXTURE_2D, slice[level].depthBuffer));
-                    XRC_CHECK_THROW_GLCMD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-                    XRC_CHECK_THROW_GLCMD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-                    XRC_CHECK_THROW_GLCMD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-                    XRC_CHECK_THROW_GLCMD(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-                    XRC_CHECK_THROW_GLCMD(glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32, createInfo.width, createInfo.height, 0,
-                                                       GL_DEPTH_COMPONENT, GL_FLOAT, nullptr));
-                }
-                return slice[level].depthBuffer;
-            }
-        };
+                        const RenderParams& params) override;
 
     private:
         bool initialized = false;
@@ -484,20 +601,22 @@ namespace Conformance
 
 #if defined(XR_USE_PLATFORM_WIN32)
         XrGraphicsBindingOpenGLWin32KHR graphicsBinding{XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
-#endif
-#if defined(XR_USE_PLATFORM_XLIB)
+#elif defined(XR_USE_PLATFORM_XLIB)
         XrGraphicsBindingOpenGLXlibKHR graphicsBinding{XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR};
+#elif defined(XR_USE_PLATFORM_XCB)
+        XrGraphicsBindingOpenGLXcbKHR graphicsBinding{XR_TYPE_GRAPHICS_BINDING_OPENGL_XCB_KHR};
+#else
+#error "Platform not (yet) supported."
 #endif
 
-        std::map<const XrSwapchainImageBaseHeader*, std::shared_ptr<SwapchainImageContext>> m_swapchainImageContextMap;
+        SwapchainImageDataMap<OpenGLSwapchainImageData> m_swapchainImageDataMap;
         GLuint m_swapchainFramebuffer{0};
         GLuint m_program{0};
         GLint m_modelViewProjectionUniformLocation{0};
         GLint m_vertexAttribCoords{0};
         GLint m_vertexAttribColor{0};
-        GLuint m_vao{0};
-        GLuint m_cubeVertexBuffer{0};
-        GLuint m_cubeIndexBuffer{0};
+        MeshHandle m_cubeMesh{};
+        VectorWithGenerationCountedHandles<OpenGLMesh, MeshHandle> m_meshes;
     };
 
     OpenGLGraphicsPlugin::OpenGLGraphicsPlugin(const std::shared_ptr<IPlatformPlugin>& /*unused*/)
@@ -603,15 +722,23 @@ namespace Conformance
 #if defined(XR_USE_PLATFORM_WIN32)
         graphicsBinding.hDC = window.context.hDC;
         graphicsBinding.hGLRC = window.context.hGLRC;
-#endif  // XR_USE_PLATFORM_WIN32
-
-#ifdef XR_USE_PLATFORM_XLIB
+#elif defined(XR_USE_PLATFORM_XLIB)
         REQUIRE(window.context.xDisplay != nullptr);
         graphicsBinding.xDisplay = window.context.xDisplay;
         graphicsBinding.visualid = window.context.visualid;
         graphicsBinding.glxFBConfig = window.context.glxFBConfig;
         graphicsBinding.glxDrawable = window.context.glxDrawable;
         graphicsBinding.glxContext = window.context.glxContext;
+#elif defined(XR_USE_PLATFORM_XCB)
+        REQUIRE(window.context.connection != nullptr);
+        graphicsBinding.connection = window.context.connection;
+        graphicsBinding.screenNumber = window.context.screen_number;
+        graphicsBinding.fbconfigid = window.context.fbconfigid;
+        graphicsBinding.visualid = window.context.visualid;
+        graphicsBinding.glxDrawable = window.context.glxDrawable;
+        graphicsBinding.glxContext = window.context.glxContext;
+#else
+#error "Platform not (yet) supported."
 #endif
 
         GLenum error = glGetError();
@@ -638,6 +765,7 @@ namespace Conformance
             return false;
         }
 
+#if !defined(OS_APPLE_MACOS)
 #if !defined(NDEBUG)
         glEnable(GL_DEBUG_OUTPUT);
         glDebugMessageCallback(
@@ -645,7 +773,8 @@ namespace Conformance
                 ((OpenGLGraphicsPlugin*)userParam)->DebugMessageCallback(source, type, id, severity, length, message);
             },
             this);
-#endif
+#endif  // !defined(NDEBUG)
+#endif  // !defined(OS_APPLE_MACOS)
 
         InitializeResources();
 
@@ -660,6 +789,7 @@ namespace Conformance
         (void)type;
         (void)id;
         (void)length;
+#if !defined(OS_APPLE_MACOS)
         const char* sev = "<unknown>";
         switch (severity) {
         case GL_DEBUG_SEVERITY_NOTIFICATION:
@@ -678,6 +808,9 @@ namespace Conformance
         if (severity == GL_DEBUG_SEVERITY_NOTIFICATION)
             return;
         ReportF("GL %s (0x%x): %s", sev, id, message);
+#else
+        (void)severity;
+#endif  // !defined(OS_APPLE_MACOS)
     }
 
     void OpenGLGraphicsPlugin::CheckState(const char* file_line) const
@@ -700,6 +833,10 @@ namespace Conformance
         if (!window.context.xDisplay) {
             return;
         }
+#elif defined(OS_LINUX_XCB)
+        if (!window.context.connection) {
+            return;
+        }
 #else
 #error "Platform not (yet) supported."
 #endif
@@ -713,9 +850,11 @@ namespace Conformance
 
     void OpenGLGraphicsPlugin::InitializeResources()
     {
+#if !defined(OS_APPLE_MACOS)
 #if !defined(NDEBUG)
         XRC_CHECK_THROW_GLCMD(glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS));
-#endif
+#endif  // !defined(NDEBUG)
+#endif  // !defined(OS_APPLE_MACOS)
 
         XRC_CHECK_THROW_GLCMD(glGenFramebuffers(1, &m_swapchainFramebuffer));
         //ReportF("Got fb %d", m_swapchainFramebuffer);
@@ -744,29 +883,12 @@ namespace Conformance
         m_vertexAttribCoords = glGetAttribLocation(m_program, "VertexPos");
         m_vertexAttribColor = glGetAttribLocation(m_program, "VertexColor");
 
-        XRC_CHECK_THROW_GLCMD(glGenBuffers(1, &m_cubeVertexBuffer));
-        XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ARRAY_BUFFER, m_cubeVertexBuffer));
-        XRC_CHECK_THROW_GLCMD(
-            glBufferData(GL_ARRAY_BUFFER, sizeof(Geometry::c_cubeVertices), &Geometry::c_cubeVertices[0], GL_STATIC_DRAW));
-
-        XRC_CHECK_THROW_GLCMD(glGenBuffers(1, &m_cubeIndexBuffer));
-        XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_cubeIndexBuffer));
-        XRC_CHECK_THROW_GLCMD(
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Geometry::c_cubeIndices), &Geometry::c_cubeIndices[0], GL_STATIC_DRAW));
-
-        XRC_CHECK_THROW_GLCMD(glGenVertexArrays(1, &m_vao));
-        XRC_CHECK_THROW_GLCMD(glBindVertexArray(m_vao));
-        XRC_CHECK_THROW_GLCMD(glEnableVertexAttribArray(m_vertexAttribCoords));
-        XRC_CHECK_THROW_GLCMD(glEnableVertexAttribArray(m_vertexAttribColor));
-        XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ARRAY_BUFFER, m_cubeVertexBuffer));
-        XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_cubeIndexBuffer));
-        XRC_CHECK_THROW_GLCMD(glVertexAttribPointer(m_vertexAttribCoords, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex), nullptr));
-        XRC_CHECK_THROW_GLCMD(glVertexAttribPointer(m_vertexAttribColor, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex),
-                                                    reinterpret_cast<const void*>(sizeof(XrVector3f))));
+        m_cubeMesh = MakeCubeMesh();
     }
 
     void OpenGLGraphicsPlugin::CheckFramebuffer(GLuint fb) const
     {
+#if !defined(OS_APPLE_MACOS)
         GLenum st = glCheckNamedFramebufferStatus(fb, GL_FRAMEBUFFER);
         if (st == GL_FRAMEBUFFER_COMPLETE)
             return;
@@ -804,6 +926,9 @@ namespace Conformance
             break;
         }
         XRC_THROW("CheckFramebuffer " + std::to_string(fb) + " is " + status);
+#else
+        (void)fb;
+#endif  // !defined(OS_APPLE_MACOS)
     }
 
     void OpenGLGraphicsPlugin::CheckShader(GLuint shader) const
@@ -830,6 +955,11 @@ namespace Conformance
         }
     }
 
+    void OpenGLGraphicsPlugin::ClearSwapchainCache()
+    {
+        m_swapchainImageDataMap.Reset();
+    }
+
     void OpenGLGraphicsPlugin::ShutdownDevice()
     {
         if (m_swapchainFramebuffer != 0) {
@@ -838,22 +968,12 @@ namespace Conformance
         if (m_program != 0) {
             glDeleteProgram(m_program);
         }
-        if (m_vao != 0) {
-            glDeleteVertexArrays(1, &m_vao);
-        }
-        if (m_cubeVertexBuffer != 0) {
-            glDeleteBuffers(1, &m_cubeVertexBuffer);
-        }
-        if (m_cubeIndexBuffer != 0) {
-            glDeleteBuffers(1, &m_cubeIndexBuffer);
-        }
 
         // Reset the swapchains to avoid calling Vulkan functions in the dtors after
         // we've shut down the device.
-        for (auto& ctx : m_swapchainImageContextMap) {
-            ctx.second->Reset();
-        }
-        m_swapchainImageContextMap.clear();
+        m_swapchainImageDataMap.Reset();
+        m_cubeMesh = {};
+        m_meshes.clear();
 
         deleteGLContext();
     }
@@ -1086,43 +1206,48 @@ namespace Conformance
         return GL_SRGB8_ALPHA8;
     }
 
-    std::shared_ptr<IGraphicsPlugin::SwapchainImageStructs>
-    OpenGLGraphicsPlugin::AllocateSwapchainImageStructs(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo)
+    ISwapchainImageData* OpenGLGraphicsPlugin::AllocateSwapchainImageData(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo)
     {
-        auto derivedResult = std::make_shared<SwapchainImageContext>();
 
-        // Allocate and initialize the buffer of image structs (must be sequential in memory for xrEnumerateSwapchainImages).
-        // Return back an array of pointers to each swapchain image struct so the consumer doesn't need to know the type/size.
-        // Keep the buffer alive by adding it into the list of buffers.
-
-        std::vector<XrSwapchainImageBaseHeader*> bases = derivedResult->Create(uint32_t(size), swapchainCreateInfo);
-
-        for (auto& base : bases) {
-            // Set the generic vector of base pointers
-            derivedResult->imagePtrVector.push_back(base);
-            // Map every swapchainImage base pointer to this context
-            m_swapchainImageContextMap[base] = derivedResult;
-        }
+        auto typedResult = std::make_unique<OpenGLSwapchainImageData>(uint32_t(size), swapchainCreateInfo);
 
         // Cast our derived type to the caller-expected type.
-        std::shared_ptr<SwapchainImageStructs> result =
-            std::static_pointer_cast<SwapchainImageStructs, SwapchainImageContext>(derivedResult);
+        auto ret = static_cast<ISwapchainImageData*>(typedResult.get());
 
-        return result;
+        m_swapchainImageDataMap.Adopt(std::move(typedResult));
+
+        return ret;
     }
 
-    void OpenGLGraphicsPlugin::CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, int64_t /*imageFormat*/, uint32_t arraySlice,
-                                             const RGBAImage& image)
+    inline ISwapchainImageData* OpenGLGraphicsPlugin::AllocateSwapchainImageDataWithDepthSwapchain(
+        size_t size, const XrSwapchainCreateInfo& colorSwapchainCreateInfo, XrSwapchain depthSwapchain,
+        const XrSwapchainCreateInfo& depthSwapchainCreateInfo)
     {
-        auto swapchainContext = m_swapchainImageContextMap[swapchainImage];
+
+        auto typedResult =
+            std::make_unique<OpenGLSwapchainImageData>(uint32_t(size), colorSwapchainCreateInfo, depthSwapchain, depthSwapchainCreateInfo);
+
+        // Cast our derived type to the caller-expected type.
+        auto ret = static_cast<ISwapchainImageData*>(typedResult.get());
+
+        m_swapchainImageDataMap.Adopt(std::move(typedResult));
+
+        return ret;
+    }
+
+    void OpenGLGraphicsPlugin::CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, uint32_t arraySlice, const RGBAImage& image)
+    {
+        OpenGLSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(swapchainImage);
 
         const uint32_t colorTexture = reinterpret_cast<const XrSwapchainImageOpenGLKHR*>(swapchainImage)->image;
         const GLint mip = 0;
         const GLint x = 0;
         const GLint z = arraySlice;
-        const GLsizei w = swapchainContext->createInfo.width;
-        const GLsizei h = swapchainContext->createInfo.height;
-        if (swapchainContext->createInfo.arraySize > 1) {
+        const GLsizei w = swapchainData->Width();
+        const GLsizei h = swapchainData->Height();
+        if (swapchainData->HasMultipleSlices()) {
             XRC_CHECK_THROW_GLCMD(glBindTexture(GL_TEXTURE_2D_ARRAY, colorTexture));
             for (GLint y = 0; y < h; ++y) {
                 const void* pixels = &image.pixels[(h - 1 - y) * w];
@@ -1139,29 +1264,34 @@ namespace Conformance
     }
 
     void OpenGLGraphicsPlugin::ClearImageSlice(const XrSwapchainImageBaseHeader* colorSwapchainImage, uint32_t imageArrayIndex,
-                                               int64_t /*colorSwapchainFormat*/, XrColor4f bgColor)
+                                               XrColor4f bgColor)
     {
-        auto swapchainContext = m_swapchainImageContextMap[colorSwapchainImage];
+        OpenGLSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(colorSwapchainImage);
 
         XRC_CHECK_THROW_GLCMD(glBindFramebuffer(GL_FRAMEBUFFER, m_swapchainFramebuffer));
 
         const uint32_t colorTexture = reinterpret_cast<const XrSwapchainImageOpenGLKHR*>(colorSwapchainImage)->image;
-        const uint32_t depthTexture = swapchainContext->GetDepthTexture(imageArrayIndex);
+        const uint32_t depthTexture = swapchainData->GetDepthImageForColorIndex(imageIndex).image;
 
-        if (swapchainContext->createInfo.arraySize > 1) {
+        bool imageArray = swapchainData->HasMultipleSlices();
+        GLenum texTarget = TexTarget(imageArray, swapchainData->IsMultisample());
+        if (imageArray) {
             XRC_CHECK_THROW_GLCMD(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorTexture, 0, imageArrayIndex));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthTexture, 0, imageArrayIndex));
         }
         else {
-            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texTarget, colorTexture, 0));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, texTarget, depthTexture, 0));
         }
-        XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0));
 
         CheckFramebuffer(m_swapchainFramebuffer);
 
         GLint x = 0;
         GLint y = 0;
-        GLsizei w = swapchainContext->createInfo.width;
-        GLsizei h = swapchainContext->createInfo.height;
+        GLsizei w = swapchainData->Width();
+        GLsizei h = swapchainData->Height();
         XRC_CHECK_THROW_GLCMD(glViewport(x, y, w, h));
         XRC_CHECK_THROW_GLCMD(glScissor(x, y, w, h));
 
@@ -1175,26 +1305,38 @@ namespace Conformance
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    void OpenGLGraphicsPlugin::RenderView(const XrCompositionLayerProjectionView& layerView,
-                                          const XrSwapchainImageBaseHeader* colorSwapchainImage, int64_t /*colorSwapchainFormat*/,
-                                          const std::vector<Cube>& cubes)
+    MeshHandle OpenGLGraphicsPlugin::MakeSimpleMesh(span<const uint16_t> idx, span<const Geometry::Vertex> vtx)
     {
-        auto swapchainContext = m_swapchainImageContextMap[colorSwapchainImage];
+        auto handle = m_meshes.emplace_back(m_vertexAttribCoords, m_vertexAttribColor, idx.data(), (uint32_t)idx.size(), vtx.data(),
+                                            (uint32_t)vtx.size());
+
+        return handle;
+    }
+
+    void OpenGLGraphicsPlugin::RenderView(const XrCompositionLayerProjectionView& layerView,
+                                          const XrSwapchainImageBaseHeader* colorSwapchainImage, const RenderParams& params)
+    {
+        OpenGLSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(colorSwapchainImage);
 
         XRC_CHECK_THROW_GLCMD(glBindFramebuffer(GL_FRAMEBUFFER, m_swapchainFramebuffer));
 
         GLint layer = layerView.subImage.imageArrayIndex;
 
         const GLuint colorTexture = reinterpret_cast<const XrSwapchainImageOpenGLKHR*>(colorSwapchainImage)->image;
-        const GLuint depthTexture = swapchainContext->GetDepthTexture(layer);
+        const GLuint depthTexture = swapchainData->GetDepthImageForColorIndex(imageIndex).image;
 
-        if (swapchainContext->createInfo.arraySize > 1) {
+        bool imageArray = swapchainData->HasMultipleSlices();
+        GLenum texTarget = TexTarget(imageArray, swapchainData->IsMultisample());
+        if (imageArray) {
             XRC_CHECK_THROW_GLCMD(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorTexture, 0, layer));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthTexture, 0, layer));
         }
         else {
-            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texTarget, colorTexture, 0));
+            XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, texTarget, depthTexture, 0));
         }
-        XRC_CHECK_THROW_GLCMD(glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthTexture, 0));
 
         CheckFramebuffer(m_swapchainFramebuffer);
 
@@ -1218,27 +1360,44 @@ namespace Conformance
         XrMatrix4x4f proj;
         XrMatrix4x4f_CreateProjectionFov(&proj, GRAPHICS_OPENGL, layerView.fov, 0.05f, 100.0f);
         XrMatrix4x4f toView;
-        XrVector3f scale{1.f, 1.f, 1.f};
-        XrMatrix4x4f_CreateTranslationRotationScale(&toView, &pose.position, &pose.orientation, &scale);
+        XrMatrix4x4f_CreateFromRigidTransform(&toView, &pose);
         XrMatrix4x4f view;
         XrMatrix4x4f_InvertRigidBody(&view, &toView);
         XrMatrix4x4f vp;
         XrMatrix4x4f_Multiply(&vp, &proj, &view);
+        MeshHandle lastMeshHandle;
 
-        // Set cube primitive data.
-        XRC_CHECK_THROW_GLCMD(glBindVertexArray(m_vao));
+        const auto drawMesh = [this, &vp, &lastMeshHandle](const MeshDrawable mesh) {
+            OpenGLMesh& glMesh = m_meshes[mesh.handle];
+            if (mesh.handle != lastMeshHandle) {
+                // We are now rendering a new mesh
+                XRC_CHECK_THROW_GLCMD(glBindVertexArray(glMesh.m_vao));
+                XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ARRAY_BUFFER, glMesh.m_vertexBuffer));
+                XRC_CHECK_THROW_GLCMD(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, glMesh.m_indexBuffer));
 
-        // Render each cube
-        for (const Cube& cube : cubes) {
+                lastMeshHandle = mesh.handle;
+            }
+
             // Compute the model-view-projection transform and set it..
             XrMatrix4x4f model;
-            XrMatrix4x4f_CreateTranslationRotationScale(&model, &cube.Pose.position, &cube.Pose.orientation, &cube.Scale);
+            XrMatrix4x4f_CreateTranslationRotationScale(&model, &mesh.params.pose.position, &mesh.params.pose.orientation,
+                                                        &mesh.params.scale);
             XrMatrix4x4f mvp;
             XrMatrix4x4f_Multiply(&mvp, &vp, &model);
             glUniformMatrix4fv(m_modelViewProjectionUniformLocation, 1, GL_FALSE, reinterpret_cast<const GLfloat*>(&mvp));
 
-            // Draw the cube.
-            glDrawElements(GL_TRIANGLES, GLsizei(Geometry::c_cubeIndices.size()), GL_UNSIGNED_SHORT, nullptr);
+            // Draw the mesh.
+            glDrawElements(GL_TRIANGLES, GLsizei(glMesh.m_numIndices), GL_UNSIGNED_SHORT, nullptr);
+        };
+
+        // Render each cube
+        for (const Cube& cube : params.cubes) {
+            drawMesh(MeshDrawable{m_cubeMesh, cube.params.pose, cube.params.scale});
+        }
+
+        // Render each mesh
+        for (const auto& mesh : params.meshes) {
+            drawMesh(mesh);
         }
 
         glBindVertexArray(0);

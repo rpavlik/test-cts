@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -38,7 +38,7 @@ namespace Conformance
     {
     }
 
-    void ActionLayerManager::WaitWithMessage(const char* waitMessage, std::function<bool()> frameCallback)
+    bool ActionLayerManager::WaitWithMessage(const char* waitMessage, std::function<bool()> frameCallback)
     {
         bool messageDisplayed = false;
         bool waitCompleted = WaitUntilPredicateWithTimeout(
@@ -55,6 +55,7 @@ namespace Conformance
 
         REQUIRE_MSG(waitCompleted, std::string("Time out: ") + waitMessage);
         DisplayMessage("");
+        return waitCompleted;
     }
 
     void ActionLayerManager::WaitForSessionFocusWithMessage()
@@ -73,6 +74,24 @@ namespace Conformance
             }
             return false;
         });
+    }
+
+    bool ActionLayerManager::WaitForLocatability(const std::string& hand, XrSpace space, XrSpace localSpace, XrSpaceLocation* location,
+                                                 bool expectLocatability)
+    {
+        const std::string message = "Waiting for " + hand + " controller to " + (expectLocatability ? "gain" : "lose") + " tracking...";
+
+        bool success = WaitWithMessage(message.c_str(), [&]() {
+            GetRenderLoop().IterateFrame();
+            REQUIRE_RESULT(xrLocateSpace(space, localSpace, GetRenderLoop().GetLastPredictedDisplayTime(), location), XR_SUCCESS);
+
+            constexpr XrSpaceLocationFlags LocatableFlags = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+            const bool isLocatable = (location->locationFlags & LocatableFlags) == LocatableFlags;
+            const bool isExpected = expectLocatability == isLocatable;
+            return isExpected;
+        });
+
+        return success;
     }
 
     void ActionLayerManager::SyncActionsUntilFocusWithMessage(const XrActionsSyncInfo& syncInfo)
@@ -142,7 +161,7 @@ namespace Conformance
 
         *static_cast<XrCompositionLayerQuad*>(this) = {XR_TYPE_COMPOSITION_LAYER_QUAD};
         size.width = 1;
-        size.height = size.width * image->height / image->width;
+        size.height = size.width * static_cast<float>(image->height) / static_cast<float>(image->width);
         pose = XrPosef{{0, 0, 0, 1}, {0, 0, -1.5f}};
         subImage = m_compositionHelper.MakeDefaultSubImage(messageSwapchain);
         space = compositionSpace;

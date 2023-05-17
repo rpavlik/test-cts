@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -25,7 +25,7 @@
 #include <string>
 #include <cstring>
 #include <thread>
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <openxr/openxr.h>
 #include <openxr/openxr_reflection.h>
 
@@ -36,7 +36,7 @@ constexpr XrViewConfigurationType KnownViewTypes[] = {XR_LIST_ENUM_XrViewConfigu
 namespace Conformance
 {
 
-    TEST_CASE("Session State", "")
+    TEST_CASE("SessionState", "")
     {
         AutoBasicSession session(AutoBasicSession::createSession);
         REQUIRE_MSG(session != XR_NULL_HANDLE_CPP,
@@ -114,7 +114,9 @@ namespace Conformance
                 REQUIRE_THAT(result, In<XrResult>({XR_ERROR_VALIDATION_FAILURE, XR_ERROR_VIEW_CONFIGURATION_TYPE_UNSUPPORTED}));
                 if (!valid && result == XR_ERROR_VIEW_CONFIGURATION_TYPE_UNSUPPORTED) {
                     WARN(
-                        "Runtime accepted an invalid enum value as unsupported, which makes it harder for apps to reason about the error.");
+                        "On receiving an 'invalid' enum value "
+                        << viewType
+                        << ", the runtime returned as XR_ERROR_VIEW_CONFIGURATION_TYPE_UNSUPPORTED instead of XR_ERROR_VALIDATION_FAILURE, which may make it harder for apps to reason about the error.");
                 }
             }
         }

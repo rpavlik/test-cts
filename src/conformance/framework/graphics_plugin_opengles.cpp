@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,7 +18,9 @@
 
 #ifdef XR_USE_GRAPHICS_API_OPENGL_ES
 
+#include "swapchain_image_data.h"
 #include "swapchain_parameters.h"
+#include "graphics_plugin_impl_helpers.h"
 #include "conformance_framework.h"
 #include "Geometry.h"
 #include "common/gfxwrapper_opengl.h"
@@ -27,7 +29,7 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include <list>
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <unordered_map>
 #include <mutex>
 #include <atomic>
@@ -75,6 +77,151 @@ namespace Conformance
     }
     )_";
 
+    struct OpenGLESMesh
+    {
+        bool valid{false};
+        GLuint m_vao{0};
+        GLuint m_vertexBuffer{0};
+        GLuint m_indexBuffer{0};
+        uint32_t m_numIndices;
+
+        OpenGLESMesh(GLint vertexAttribCoords, GLint vertexAttribColor,  //
+                     const uint16_t* idx_data, uint32_t idx_count,       //
+                     const Geometry::Vertex* vtx_data, uint32_t vtx_count)
+        {
+            m_numIndices = idx_count;
+
+            GL(glGenBuffers(1, &m_vertexBuffer));
+            GL(glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer));
+            GL(glBufferData(GL_ARRAY_BUFFER, vtx_count * sizeof(Geometry::Vertex), vtx_data, GL_STATIC_DRAW));
+
+            GL(glGenBuffers(1, &m_indexBuffer));
+            GL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer));
+            GL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx_count * sizeof(uint16_t), idx_data, GL_STATIC_DRAW));
+
+            glGenVertexArrays(1, &m_vao);
+            glBindVertexArray(m_vao);
+            glEnableVertexAttribArray(vertexAttribCoords);
+            glEnableVertexAttribArray(vertexAttribColor);
+            glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
+            glVertexAttribPointer(vertexAttribCoords, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex), nullptr);
+            glVertexAttribPointer(vertexAttribColor, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex),
+                                  reinterpret_cast<const void*>(sizeof(XrVector3f)));
+
+            valid = true;
+        }
+
+        OpenGLESMesh(OpenGLESMesh&& other) noexcept : m_numIndices(0)
+        {
+            using std::swap;
+            swap(valid, other.valid);
+            swap(m_vao, other.m_vao);
+            swap(m_vertexBuffer, other.m_vertexBuffer);
+            swap(m_indexBuffer, other.m_indexBuffer);
+            swap(m_numIndices, other.m_numIndices);
+        }
+
+        OpenGLESMesh(const OpenGLESMesh&) = delete;
+
+        ~OpenGLESMesh()
+        {
+            if (!valid) {
+                return;
+            }
+            if (m_vao != 0) {
+                glDeleteVertexArrays(1, &m_vao);
+            }
+            if (m_vertexBuffer != 0) {
+                glDeleteBuffers(1, &m_vertexBuffer);
+            }
+            if (m_indexBuffer != 0) {
+                glDeleteBuffers(1, &m_indexBuffer);
+            }
+        }
+    };
+
+    struct OpenGLESFallbackDepthTexture
+    {
+    public:
+        OpenGLESFallbackDepthTexture() = default;
+        ~OpenGLESFallbackDepthTexture()
+        {
+            Reset();
+        }
+        void Reset()
+        {
+            if (Allocated()) {
+
+                GL(glDeleteTextures(1, &m_texture));
+            }
+            m_texture = 0;
+            m_xrImage.image = 0;
+        }
+        bool Allocated() const
+        {
+            return m_texture != 0;
+        }
+
+        void Allocate(GLuint width, GLuint height, uint32_t arraySize)
+        {
+            Reset();
+            const bool isArray = arraySize > 1;
+            GLenum target = isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
+            GL(glGenTextures(1, &m_texture));
+            GL(glBindTexture(target, m_texture));
+            GL(glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+            GL(glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+            GL(glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+            GL(glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+            if (isArray) {
+                GL(glTexImage3D(target, 0, GL_DEPTH_COMPONENT24, width, height, arraySize, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT,
+                                nullptr));
+            }
+            else {
+                GL(glTexImage2D(target, 0, GL_DEPTH_COMPONENT24, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr));
+            }
+            m_xrImage.image = m_texture;
+        }
+        const XrSwapchainImageOpenGLESKHR& GetTexture() const
+        {
+            return m_xrImage;
+        }
+
+    private:
+        uint32_t m_texture{0};
+        XrSwapchainImageOpenGLESKHR m_xrImage{XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR, NULL, 0};
+    };
+
+    class OpenGLESSwapchainImageData : public SwapchainImageDataBase<XrSwapchainImageOpenGLESKHR>
+    {
+    public:
+        OpenGLESSwapchainImageData(uint32_t capacity, const XrSwapchainCreateInfo& createInfo)
+            : SwapchainImageDataBase(XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR, capacity, createInfo), m_internalDepthTextures(capacity)
+        {
+        }
+
+        OpenGLESSwapchainImageData(uint32_t capacity, const XrSwapchainCreateInfo& createInfo, XrSwapchain depthSwapchain,
+                                   const XrSwapchainCreateInfo& depthCreateInfo)
+            : SwapchainImageDataBase(XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR, capacity, createInfo, depthSwapchain, depthCreateInfo)
+        {
+        }
+
+    protected:
+        const XrSwapchainImageOpenGLESKHR& GetFallbackDepthSwapchainImage(uint32_t i) override
+        {
+
+            if (!m_internalDepthTextures[i].Allocated()) {
+                m_internalDepthTextures[i].Allocate(this->Width(), this->Height(), this->ArraySize());
+            }
+
+            return m_internalDepthTextures[i].GetTexture();
+        }
+
+    private:
+        std::vector<OpenGLESFallbackDepthTexture> m_internalDepthTextures;
+    };
+
     struct OpenGLESGraphicsPlugin : public IGraphicsPlugin
     {
         OpenGLESGraphicsPlugin(std::shared_ptr<IPlatformPlugin>& /*unused*/);
@@ -100,12 +247,13 @@ namespace Conformance
 
         void Flush() override;
 
+        void ClearSwapchainCache() override;
+
         void ShutdownDevice() override;
 
         const XrBaseInStructure* GetGraphicsBinding() const override;
 
-        void CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, int64_t imageFormat, uint32_t arraySlice,
-                           const RGBAImage& image) override;
+        void CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, uint32_t arraySlice, const RGBAImage& image) override;
 
         std::string GetImageFormatName(int64_t imageFormat) const override;
 
@@ -124,27 +272,26 @@ namespace Conformance
 
         int64_t GetSRGBA8Format() const override;
 
-        std::shared_ptr<IGraphicsPlugin::SwapchainImageStructs>
-        AllocateSwapchainImageStructs(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo) override;
+        ISwapchainImageData* AllocateSwapchainImageData(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo) override;
 
-        void ClearImageSlice(const XrSwapchainImageBaseHeader* colorSwapchainImage, uint32_t imageArrayIndex, int64_t colorSwapchainFormat,
+        ISwapchainImageData* AllocateSwapchainImageDataWithDepthSwapchain(size_t size,
+                                                                          const XrSwapchainCreateInfo& colorSwapchainCreateInfo,
+                                                                          XrSwapchain depthSwapchain,
+                                                                          const XrSwapchainCreateInfo& depthSwapchainCreateInfo) override;
+
+        void ClearImageSlice(const XrSwapchainImageBaseHeader* colorSwapchainImage, uint32_t imageArrayIndex,
                              XrColor4f bgColor = DarkSlateGrey) override;
 
-        void RenderView(const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* colorSwapchainImage,
-                        int64_t colorSwapchainFormat, const std::vector<Cube>& cubes) override;
+        MeshHandle MakeSimpleMesh(span<const uint16_t> idx, span<const Geometry::Vertex> vtx) override;
 
-    protected:
-        struct OpenGLESSwapchainImageStructs : public IGraphicsPlugin::SwapchainImageStructs
-        {
-            std::vector<XrSwapchainImageOpenGLESKHR> imageVector;
-        };
+        void RenderView(const XrCompositionLayerProjectionView& layerView, const XrSwapchainImageBaseHeader* colorSwapchainImage,
+                        const RenderParams& params) override;
 
     private:
         bool initialized{false};
 
         void InitializeResources();
         void ShutdownResources();
-        uint32_t GetDepthTexture(const XrSwapchainImageBaseHeader* colorSwapchainImage);
         XrVersion OpenGLESVersionOfContext = 0;
 
         bool deviceInitialized{false};
@@ -158,33 +305,10 @@ namespace Conformance
         GLint m_modelViewProjectionUniformLocation{0};
         GLint m_vertexAttribCoords{0};
         GLint m_vertexAttribColor{0};
-        GLuint m_vao{0};
-        GLuint m_cubeVertexBuffer{0};
-        GLuint m_cubeIndexBuffer{0};
+        MeshHandle m_cubeMesh{};
+        VectorWithGenerationCountedHandles<OpenGLESMesh, MeshHandle> m_meshes;
 
-        // The OpenGLES interface uses a standard 2D target type when
-        // arraySize == 1, so we need this info in some situations where
-        // we are only provided the XrSwapchainImageBaseHeader *.
-        // Since this plugin allocates that memory, we can make the
-        // association.
-        // We could also change the interface to the plugin to provide
-        // this info, but it feels like a GL-specific quirk that is better
-        // hidden if possible.
-        struct SwapchainInfo
-        {
-            XrSwapchainCreateInfo createInfo;
-            int size;  // swapchain length is not known until after creation
-        };
-        std::vector<SwapchainInfo> m_swapchainInfo;
-        struct ImageInfo
-        {
-            int swapchainIndex;  // index into m_swapchainInfo
-            int imageIndex;      // image index into swapchain
-        };
-        std::unordered_map<const XrSwapchainImageBaseHeader*, ImageInfo> m_imageInfo;
-
-        // Map color buffer to associated depth buffer. This map is populated on demand.
-        std::unordered_map<const XrSwapchainImageBaseHeader*, uint32_t> m_colorToDepthMap;
+        SwapchainImageDataMap<OpenGLESSwapchainImageData> m_swapchainImageDataMap;
     };
 
     OpenGLESGraphicsPlugin::OpenGLESGraphicsPlugin(std::shared_ptr<IPlatformPlugin>& /*unused*/) : initialized(false)
@@ -237,20 +361,25 @@ namespace Conformance
         return nullptr;
     }
 
-    void OpenGLESGraphicsPlugin::CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, int64_t /* imageFormat */,
-                                               uint32_t arraySlice, const RGBAImage& image)
+    void OpenGLESGraphicsPlugin::CopyRGBAImage(const XrSwapchainImageBaseHeader* swapchainImage, uint32_t arraySlice,
+                                               const RGBAImage& image)
     {
-        auto imageInfoIt = m_imageInfo.find(swapchainImage);
-        CHECK(imageInfoIt != m_imageInfo.end());
+        OpenGLESSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
 
-        SwapchainInfo& swapchainInfo = m_swapchainInfo[imageInfoIt->second.swapchainIndex];
-        GLuint arraySize = swapchainInfo.createInfo.arraySize;
-        bool isArray = arraySize > 1;
-        GLuint width = image.width;
-        GLuint height = image.height;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(swapchainImage);
+
+        // auto imageInfoIt = m_imageInfo.find(swapchainImage);
+        // CHECK(imageInfoIt != m_imageInfo.end());
+
+        // SwapchainInfo& swapchainInfo = m_swapchainInfo[imageInfoIt->second.swapchainIndex];
+        // GLuint arraySize = swapchainInfo.createInfo.arraySize;
+        const bool isArray = swapchainData->HasMultipleSlices();
+        GLuint width = swapchainData->Width();
+        GLuint height = swapchainData->Height();
         GLenum target = isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 
-        const uint32_t img = reinterpret_cast<const XrSwapchainImageOpenGLESKHR*>(swapchainImage)->image;
+        const uint32_t img = swapchainData->GetTypedImage(imageIndex).image;
         GL(glBindTexture(target, img));
         if (isArray) {
             for (GLuint y = 0; y < height; ++y) {
@@ -316,9 +445,7 @@ namespace Conformance
         {
             REQUIRE(window.display != EGL_NO_DISPLAY);
             REQUIRE(window.context.context != EGL_NO_CONTEXT);
-            graphicsBinding = {};
-            graphicsBinding.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR;
-            graphicsBinding.next = nullptr;
+            graphicsBinding = {XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR};
             graphicsBinding.display = window.display;
             graphicsBinding.config = (EGLConfig)0;
             graphicsBinding.context = window.context.context;
@@ -349,6 +476,11 @@ namespace Conformance
 
         deviceInitialized = true;
         return true;
+    }
+
+    void OpenGLESGraphicsPlugin::ClearSwapchainCache()
+    {
+        m_swapchainImageDataMap.Reset();
     }
 
     void OpenGLESGraphicsPlugin::ShutdownDevice()
@@ -410,23 +542,7 @@ namespace Conformance
         m_vertexAttribCoords = glGetAttribLocation(m_program, "VertexPos");
         m_vertexAttribColor = glGetAttribLocation(m_program, "VertexColor");
 
-        GL(glGenBuffers(1, &m_cubeVertexBuffer));
-        GL(glBindBuffer(GL_ARRAY_BUFFER, m_cubeVertexBuffer));
-        GL(glBufferData(GL_ARRAY_BUFFER, sizeof(Geometry::c_cubeVertices), Geometry::c_cubeVertices.data(), GL_STATIC_DRAW));
-
-        GL(glGenBuffers(1, &m_cubeIndexBuffer));
-        GL(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_cubeIndexBuffer));
-        GL(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Geometry::c_cubeIndices), Geometry::c_cubeIndices.data(), GL_STATIC_DRAW));
-
-        glGenVertexArrays(1, &m_vao);
-        glBindVertexArray(m_vao);
-        glEnableVertexAttribArray(m_vertexAttribCoords);
-        glEnableVertexAttribArray(m_vertexAttribColor);
-        glBindBuffer(GL_ARRAY_BUFFER, m_cubeVertexBuffer);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_cubeIndexBuffer);
-        glVertexAttribPointer(m_vertexAttribCoords, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex), nullptr);
-        glVertexAttribPointer(m_vertexAttribColor, 3, GL_FLOAT, GL_FALSE, sizeof(Geometry::Vertex),
-                              reinterpret_cast<const void*>(sizeof(XrVector3f)));
+        m_cubeMesh = MakeCubeMesh();
     }
 
     void OpenGLESGraphicsPlugin::ShutdownResources()
@@ -438,21 +554,11 @@ namespace Conformance
             if (m_program != 0) {
                 GL(glDeleteProgram(m_program));
             }
-            if (m_vao != 0) {
-                GL(glDeleteVertexArrays(1, &m_vao));
-            }
-            if (m_cubeVertexBuffer != 0) {
-                GL(glDeleteBuffers(1, &m_cubeVertexBuffer));
-            }
-            if (m_cubeIndexBuffer != 0) {
-                GL(glDeleteBuffers(1, &m_cubeIndexBuffer));
-            }
 
-            for (auto& colorToDepth : m_colorToDepthMap) {
-                if (colorToDepth.second != 0) {
-                    GL(glDeleteTextures(1, &colorToDepth.second));
-                }
-            }
+            m_swapchainImageDataMap.Reset();
+
+            m_cubeMesh = {};
+            m_meshes.clear();
 
             ksGpuWindow_Destroy(&window);
         }
@@ -485,36 +591,39 @@ namespace Conformance
     }
 
 // one for texture formats which are not known to the GL.h (where a more modern header would be needed):
-#define ADD_GL_COLOR_FORMAT2(X, Y)                                                                                                       \
-    {                                                                                                                                    \
-        {X},                                                                                                                             \
-        {                                                                                                                                \
-            Y, false, false, true, false, X, {XRC_COLOR_TEXTURE_USAGE, XRC_COLOR_TEXTURE_USAGE_MUTABLE}, XRC_COLOR_CREATE_FLAGS, {}, {}, \
-            {                                                                                                                            \
-            }                                                                                                                            \
-        }                                                                                                                                \
+#define ADD_GL_COLOR_FORMAT2(X, Y)                                                                          \
+    {                                                                                                       \
+        {X},                                                                                                \
+        {                                                                                                   \
+            Y, IMMUTABLE, NO_MUT_SUPPORT, COLOR, UNCOMPRESSED, RENDERING_SUPPORT, X,                        \
+                {XRC_COLOR_TEXTURE_USAGE, XRC_COLOR_TEXTURE_USAGE_MUTABLE}, XRC_COLOR_CREATE_FLAGS, {}, {}, \
+            {                                                                                               \
+            }                                                                                               \
+        }                                                                                                   \
     }
 #define ADD_GL_COLOR_FORMAT(X) ADD_GL_COLOR_FORMAT2(X, #X)
 
-#define ADD_GL_COLOR_COMPRESSED_FORMAT2(X, Y)                                                                     \
-    {                                                                                                             \
-        {X},                                                                                                      \
-        {                                                                                                         \
-            Y, false, false, true, true, X, {XRC_COLOR_TEXTURE_USAGE_COMPRESSED}, XRC_COLOR_CREATE_FLAGS, {}, {}, \
-            {                                                                                                     \
-            }                                                                                                     \
-        }                                                                                                         \
+#define ADD_GL_COLOR_COMPRESSED_FORMAT2(X, Y)                                                                            \
+    {                                                                                                                    \
+        {X},                                                                                                             \
+        {                                                                                                                \
+            Y, IMMUTABLE, NO_MUT_SUPPORT, COLOR, COMPRESSED, RENDERING_SUPPORT, X, {XRC_COLOR_TEXTURE_USAGE_COMPRESSED}, \
+                XRC_COLOR_CREATE_FLAGS, {}, {},                                                                          \
+            {                                                                                                            \
+            }                                                                                                            \
+        }                                                                                                                \
     }
 #define ADD_GL_COLOR_COMPRESSED_FORMAT(X) ADD_GL_COLOR_COMPRESSED_FORMAT2(X, #X)
 
-#define ADD_GL_DEPTH_FORMAT2(X, Y)                                                                       \
-    {                                                                                                    \
-        {X},                                                                                             \
-        {                                                                                                \
-            Y, false, false, false, false, X, {XRC_DEPTH_TEXTURE_USAGE}, XRC_DEPTH_CREATE_FLAGS, {}, {}, \
-            {                                                                                            \
-            }                                                                                            \
-        }                                                                                                \
+#define ADD_GL_DEPTH_FORMAT2(X, Y)                                                                                  \
+    {                                                                                                               \
+        {X},                                                                                                        \
+        {                                                                                                           \
+            Y, IMMUTABLE, NO_MUT_SUPPORT, NON_COLOR, UNCOMPRESSED, RENDERING_SUPPORT, X, {XRC_DEPTH_TEXTURE_USAGE}, \
+                XRC_DEPTH_CREATE_FLAGS, {}, {},                                                                     \
+            {                                                                                                       \
+            }                                                                                                       \
+        }                                                                                                           \
     }
 #define ADD_GL_DEPTH_FORMAT(X) ADD_GL_DEPTH_FORMAT2(X, #X)
 
@@ -839,52 +948,49 @@ namespace Conformance
         return GL_SRGB8_ALPHA8;
     }
 
-    std::shared_ptr<IGraphicsPlugin::SwapchainImageStructs>
-    OpenGLESGraphicsPlugin::AllocateSwapchainImageStructs(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo)
+    ISwapchainImageData* OpenGLESGraphicsPlugin::AllocateSwapchainImageData(size_t size, const XrSwapchainCreateInfo& swapchainCreateInfo)
     {
-        auto derivedResult = std::make_shared<OpenGLESSwapchainImageStructs>();
-
-        derivedResult->imageVector.resize(size, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR, nullptr});
-
-        SwapchainInfo si;
-        si.createInfo = swapchainCreateInfo;
-        si.createInfo.next = nullptr;
-        si.size = static_cast<int>(size);
-        m_swapchainInfo.push_back(si);
-
-        ImageInfo ii;
-        ii.swapchainIndex = static_cast<int>(m_swapchainInfo.size() - 1);
-
-        for (size_t i = 0; i < size; i++) {
-            XrSwapchainImageOpenGLESKHR& image = derivedResult->imageVector[i];
-            auto imageBaseHeader = reinterpret_cast<XrSwapchainImageBaseHeader*>(&image);
-            derivedResult->imagePtrVector.push_back(imageBaseHeader);
-            ii.imageIndex = static_cast<int>(i);
-            m_imageInfo[imageBaseHeader] = ii;
-        }
+        auto typedResult = std::make_unique<OpenGLESSwapchainImageData>(uint32_t(size), swapchainCreateInfo);
 
         // Cast our derived type to the caller-expected type.
-        std::shared_ptr<SwapchainImageStructs> result =
-            std::static_pointer_cast<SwapchainImageStructs, OpenGLESSwapchainImageStructs>(derivedResult);
+        auto ret = static_cast<ISwapchainImageData*>(typedResult.get());
 
-        return result;
+        m_swapchainImageDataMap.Adopt(std::move(typedResult));
+
+        return ret;
+    }
+
+    inline ISwapchainImageData* OpenGLESGraphicsPlugin::AllocateSwapchainImageDataWithDepthSwapchain(
+        size_t size, const XrSwapchainCreateInfo& colorSwapchainCreateInfo, XrSwapchain depthSwapchain,
+        const XrSwapchainCreateInfo& depthSwapchainCreateInfo)
+    {
+
+        auto typedResult = std::make_unique<OpenGLESSwapchainImageData>(uint32_t(size), colorSwapchainCreateInfo, depthSwapchain,
+                                                                        depthSwapchainCreateInfo);
+
+        // Cast our derived type to the caller-expected type.
+        auto ret = static_cast<ISwapchainImageData*>(typedResult.get());
+
+        m_swapchainImageDataMap.Adopt(std::move(typedResult));
+
+        return ret;
     }
 
     void OpenGLESGraphicsPlugin::ClearImageSlice(const XrSwapchainImageBaseHeader* colorSwapchainImage, uint32_t imageArrayIndex,
-                                                 int64_t /*colorSwapchainFormat*/, XrColor4f bgColor)
+                                                 XrColor4f bgColor)
     {
-        auto imageInfoIt = m_imageInfo.find(colorSwapchainImage);
-        CHECK(imageInfoIt != m_imageInfo.end());
+        OpenGLESSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
 
-        SwapchainInfo& swapchainInfo = m_swapchainInfo[imageInfoIt->second.swapchainIndex];
-        GLuint arraySize = swapchainInfo.createInfo.arraySize;
-        bool isArray = arraySize > 1;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(colorSwapchainImage);
+
+        const bool isArray = swapchainData->HasMultipleSlices();
         GLenum target = isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 
         GL(glBindFramebuffer(GL_FRAMEBUFFER, m_swapchainFramebuffer));
 
-        const uint32_t colorTexture = reinterpret_cast<const XrSwapchainImageOpenGLESKHR*>(colorSwapchainImage)->image;
-        const uint32_t depthTexture = GetDepthTexture(colorSwapchainImage);
+        const uint32_t colorTexture = swapchainData->GetTypedImage(imageIndex).image;
+        const uint32_t depthTexture = swapchainData->GetDepthImageForColorIndex(imageIndex).image;
         if (isArray) {
             GL(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, colorTexture, 0, imageArrayIndex));
             GL(glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, depthTexture, 0, imageArrayIndex));
@@ -896,8 +1002,8 @@ namespace Conformance
 
         GLint x = 0;
         GLint y = 0;
-        GLsizei w = swapchainInfo.createInfo.width;
-        GLsizei h = swapchainInfo.createInfo.height;
+        GLsizei w = swapchainData->Width();
+        GLsizei h = swapchainData->Height();
         GL(glViewport(x, y, w, h));
         GL(glScissor(x, y, w, h));
 
@@ -911,63 +1017,30 @@ namespace Conformance
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    uint32_t OpenGLESGraphicsPlugin::GetDepthTexture(const XrSwapchainImageBaseHeader* colorSwapchainImage)
+    MeshHandle OpenGLESGraphicsPlugin::MakeSimpleMesh(span<const uint16_t> idx, span<const Geometry::Vertex> vtx)
     {
-        auto imageInfoIt = m_imageInfo.find(colorSwapchainImage);
-        CHECK(imageInfoIt != m_imageInfo.end());
+        auto handle = m_meshes.emplace_back(m_vertexAttribCoords, m_vertexAttribColor, idx.data(), (uint32_t)idx.size(), vtx.data(),
+                                            (uint32_t)vtx.size());
 
-        SwapchainInfo& swapchainInfo = m_swapchainInfo[imageInfoIt->second.swapchainIndex];
-        GLuint arraySize = swapchainInfo.createInfo.arraySize;
-        bool isArray = arraySize > 1;
-        GLuint width = swapchainInfo.createInfo.width;
-        GLuint height = swapchainInfo.createInfo.height;
-        GLenum target = isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
-
-        // If a depth-stencil view has already been created for this back-buffer, use it.
-        auto depthBufferIt = m_colorToDepthMap.find(colorSwapchainImage);
-        if (depthBufferIt != m_colorToDepthMap.end()) {
-            return depthBufferIt->second;
-        }
-
-        // This back-buffer has no corresponding depth-stencil texture, so create one with matching dimensions.
-
-        uint32_t depthTexture;
-        GL(glGenTextures(1, &depthTexture));
-        GL(glBindTexture(target, depthTexture));
-        GL(glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-        GL(glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-        GL(glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-        GL(glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-        if (isArray) {
-            GL(glTexImage3D(target, 0, GL_DEPTH_COMPONENT24, width, height, arraySize, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr));
-        }
-        else {
-            GL(glTexImage2D(target, 0, GL_DEPTH_COMPONENT24, width, height, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr));
-        }
-
-        m_colorToDepthMap.insert(std::make_pair(colorSwapchainImage, depthTexture));
-
-        return depthTexture;
+        return handle;
     }
 
     void OpenGLESGraphicsPlugin::RenderView(const XrCompositionLayerProjectionView& layerView,
-                                            const XrSwapchainImageBaseHeader* colorSwapchainImage, int64_t colorSwapchainFormat,
-                                            const std::vector<Cube>& cubes)
+                                            const XrSwapchainImageBaseHeader* colorSwapchainImage, const RenderParams& params)
     {
-        auto imageInfoIt = m_imageInfo.find(colorSwapchainImage);
-        CHECK(imageInfoIt != m_imageInfo.end());
+        OpenGLESSwapchainImageData* swapchainData;
+        uint32_t imageIndex;
 
-        SwapchainInfo& swapchainInfo = m_swapchainInfo[imageInfoIt->second.swapchainIndex];
-        GLuint arraySize = swapchainInfo.createInfo.arraySize;
+        std::tie(swapchainData, imageIndex) = m_swapchainImageDataMap.GetDataAndIndexFromBasePointer(colorSwapchainImage);
+
+        GLuint arraySize = swapchainData->ArraySize();
         bool isArray = arraySize > 1;
         GLenum target = isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
 
-        UNUSED_PARM(colorSwapchainFormat);  // Not used in this function for now.
-
         GL(glBindFramebuffer(GL_FRAMEBUFFER, m_swapchainFramebuffer));
 
-        const uint32_t colorTexture = reinterpret_cast<const XrSwapchainImageOpenGLESKHR*>(colorSwapchainImage)->image;
-        const uint32_t depthTexture = GetDepthTexture(colorSwapchainImage);
+        const uint32_t colorTexture = swapchainData->GetTypedImage(imageIndex).image;
+        const uint32_t depthTexture = swapchainData->GetDepthImageForColorIndex(imageIndex).image;
 
         GLint x = static_cast<GLint>(layerView.subImage.imageRect.offset.x);
         GLint y = static_cast<GLint>(layerView.subImage.imageRect.offset.y);
@@ -999,27 +1072,45 @@ namespace Conformance
         XrMatrix4x4f proj;
         XrMatrix4x4f_CreateProjectionFov(&proj, GRAPHICS_OPENGL_ES, layerView.fov, 0.05f, 100.0f);
         XrMatrix4x4f toView;
-        XrVector3f scale{1.f, 1.f, 1.f};
-        XrMatrix4x4f_CreateTranslationRotationScale(&toView, &pose.position, &pose.orientation, &scale);
+        XrMatrix4x4f_CreateFromRigidTransform(&toView, &pose);
         XrMatrix4x4f view;
         XrMatrix4x4f_InvertRigidBody(&view, &toView);
         XrMatrix4x4f vp;
         XrMatrix4x4f_Multiply(&vp, &proj, &view);
 
-        // Set cube primitive data.
-        GL(glBindVertexArray(m_vao));
+        MeshHandle lastMeshHandle;
 
-        // Render each cube
-        for (const Cube& cube : cubes) {
+        const auto drawMesh = [this, &vp, &lastMeshHandle](const MeshDrawable mesh) {
+            OpenGLESMesh& glMesh = m_meshes[mesh.handle];
+            if (mesh.handle != lastMeshHandle) {
+                // We are now rendering a new mesh
+                GL(glBindVertexArray(glMesh.m_vao));
+                glBindBuffer(GL_ARRAY_BUFFER, glMesh.m_vertexBuffer);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, glMesh.m_indexBuffer);
+
+                lastMeshHandle = mesh.handle;
+            }
+
             // Compute the model-view-projection transform and set it..
             XrMatrix4x4f model;
-            XrMatrix4x4f_CreateTranslationRotationScale(&model, &cube.Pose.position, &cube.Pose.orientation, &cube.Scale);
+            XrMatrix4x4f_CreateTranslationRotationScale(&model, &mesh.params.pose.position, &mesh.params.pose.orientation,
+                                                        &mesh.params.scale);
             XrMatrix4x4f mvp;
             XrMatrix4x4f_Multiply(&mvp, &vp, &model);
             GL(glUniformMatrix4fv(m_modelViewProjectionUniformLocation, 1, GL_FALSE, reinterpret_cast<const GLfloat*>(&mvp)));
 
-            // Draw the cube.
-            GL(glDrawElements(GL_TRIANGLES, Geometry::c_cubeIndices.size(), GL_UNSIGNED_SHORT, nullptr));
+            // Draw the mesh.
+            GL(glDrawElements(GL_TRIANGLES, glMesh.m_numIndices, GL_UNSIGNED_SHORT, nullptr));
+        };
+
+        // Render each cube
+        for (const Cube& cube : params.cubes) {
+            drawMesh(MeshDrawable{m_cubeMesh, cube.params.pose, cube.params.scale});
+        }
+
+        // Render each mesh
+        for (const auto& mesh : params.meshes) {
+            drawMesh(mesh);
         }
 
         GL(glBindVertexArray(0));

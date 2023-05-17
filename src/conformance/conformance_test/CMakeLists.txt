@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2022, The Khronos Group Inc.
+# Copyright (c) 2019-2023, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -57,6 +57,15 @@ target_include_directories(conformance_test
     ${CMAKE_CURRENT_LIST_DIR}/../../common
     ${PROJECT_SOURCE_DIR}/src/external
 
+    # Strong types for integers, etc.
+    ${CMAKE_CURRENT_LIST_DIR}/../../external/type-lite/include
+
+    # Backport of std::span functionality to pre-C++17
+    ${CMAKE_CURRENT_LIST_DIR}/../../external/span-lite/include
+
+    # Earcut algorithm for simple polygon triangulation
+    ${CMAKE_CURRENT_LIST_DIR}/../../external/earcut/include
+
     # for openxr.h:
     ${PROJECT_BINARY_DIR}/include
 
@@ -92,7 +101,7 @@ if(GLSLANG_VALIDATOR AND NOT GLSLC_COMMAND)
     target_compile_definitions(conformance_test PRIVATE USE_GLSLANGVALIDATOR)
 endif()
 
-target_link_libraries(conformance_test PRIVATE openxr_loader Threads::Threads)
+target_link_libraries(conformance_test PRIVATE openxr_loader Threads::Threads Catch2)
 
 if(WIN32)
     target_compile_definitions(conformance_test PRIVATE _CRT_SECURE_NO_WARNINGS)

@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -57,6 +57,8 @@ namespace Conformance
 
         AppendSprintf(result, "   formFactor: %s\n", formFactor.c_str());
 
+        AppendSprintf(result, "   hands: %s\n", enabledHands.c_str());
+
         AppendSprintf(result, "   environmentBlendMode: %s\n", environmentBlendMode.c_str());
 
         AppendSprintf(result, "   viewConfiguration: %s\n", viewConfiguration.c_str());
@@ -104,6 +106,7 @@ namespace Conformance
             AppendSprintf(reportString, "    <none>\n");
         }
         AppendSprintf(reportString, "Tested form factor: %s\n", globalData.options.formFactor.c_str());
+        AppendSprintf(reportString, "Tested hands: %s\n", globalData.options.enabledHands.c_str());
         AppendSprintf(reportString, "Tested view configuration: %s\n", globalData.options.viewConfiguration.c_str());
         AppendSprintf(reportString, "Tested environment blend mode: %s\n", globalData.options.environmentBlendMode.c_str());
         AppendSprintf(reportString, "Handle invalidation tested: %s\n", globalData.options.invalidHandleValidation ? "yes" : "no");
@@ -142,7 +145,7 @@ namespace Conformance
         }
 
         // Get all platform-specific extensions for the "next" fields in several structs
-        requiredPlaformInstanceCreateStruct = platformPlugin->PopulateNextFieldForStruct(XR_TYPE_INSTANCE_CREATE_INFO);
+        requiredPlatformInstanceCreateStruct = platformPlugin->PopulateNextFieldForStruct(XR_TYPE_INSTANCE_CREATE_INFO);
 
         // If we need or were given a graphics plugin, set it up.
         if (IsUsingGraphicsPlugin()) {

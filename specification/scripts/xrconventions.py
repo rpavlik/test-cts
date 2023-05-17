@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright (c) 2013-2022, The Khronos Group Inc.
+# Copyright (c) 2013-2023, The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -237,7 +237,7 @@ class OpenXRConventions(ConventionsBase):
         """Return True if Flags/FlagBits refpages are unified, False if
            they're separate.
         """
-        return True
+        return False
 
     @property
     def spec_reflow_path(self):

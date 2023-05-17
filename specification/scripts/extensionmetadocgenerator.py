@@ -1,6 +1,6 @@
 #!/usr/bin/python3 -i
 #
-# Copyright 2013-2022 The Khronos Group Inc.
+# Copyright 2013-2023 The Khronos Group Inc.
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -252,9 +252,7 @@ class Extension:
         # Only API extension dependencies are coded in XML, others are explicit
         self.writeTag('Extension and Version Dependencies', None, isRefpage, fp)
 
-        # TODO switch wording here
-        # write('  * Requires support for {} {}'.format(
-        write('  * Requires {} {}'.format(
+        write('  * Requires support for {} {}'.format(
               self.conventions.api_name(), self.requiresCore), file=fp)
 
         if self.requires:
@@ -266,13 +264,9 @@ class Extension:
                 enableQualifier = ' for any device-level functionality'
 
             for dep in self.requires.split(','):
-                # TODO switch wording here
-                write('  * Requires {}'.format(
-                      self.conventions.formatExtension(dep)),
+                write('  * Requires {} to be enabled{}'.format(
+                      self.conventions.formatExtension(dep), enableQualifier),
                       file=fp)
-                # write('  * Requires {} to be enabled{}'.format(
-                #       self.conventions.formatExtension(dep), enableQualifier),
-                #       file=fp)
         if self.provisional == 'true' and self.conventions.provisional_extension_warning:
             write('  * *This is a _provisional_ extension and must: be used with caution.', file=fp)
             write('    See the ' +
@@ -556,7 +550,9 @@ class ExtensionMetaDocOutputGenerator(OutputGenerator):
             for ext in self.extensions:
                 include = self.makeExtensionInclude(ext.name)
                 link = '  * ' + self.conventions.formatExtension(ext.name)
-                if ext.provisional == 'true':
+
+                # If something is provisional and deprecated, it's deprecated.
+                if ext.provisional == 'true' and ext.deprecationType is None:
                     write(self.conditionalExt(ext.name, include), file=provisional_extension_appendices_fp)
                     write(self.conditionalExt(ext.name, link), file=provisional_extension_appendices_toc_fp)
                     write(self.conditionalExt(ext.name, ':HAS_PROVISIONAL_EXTENSIONS:'), file=provisional_extensions_guard_macro_fp)

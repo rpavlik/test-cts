@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <sstream>
 #include <string>
 #include <vector>
 #include <mutex>
@@ -26,7 +27,7 @@
 #include "conformance_utils.h"
 #include "platform_plugin.h"
 #include "graphics_plugin.h"
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 #ifdef XR_USE_PLATFORM_WIN32
 #include "windows.h"
@@ -143,6 +144,14 @@ namespace Conformance
         std::string formFactor{"Hmd"};
         XrFormFactor formFactorValue{XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY};
 
+        /// Which hands have been selected for test. This is to allow for devices which only have
+        /// one controller, and also to allow skipping one of the controllers during development.
+        /// Options are "left", "right", and "both".
+        /// Default is "both".
+        std::string enabledHands{"both"};
+        bool leftHandEnabled{true};
+        bool rightHandEnabled{true};
+
         /// Options include "stereo" "mono". See enum XrViewConfigurationType.
         /// Default is stereo.
         std::string viewConfiguration{"Stereo"};
@@ -170,10 +179,11 @@ namespace Conformance
         /// Default is /interaction_profiles/khr/simple_controller alone.
         std::vector<std::string> enabledInteractionProfiles;
 
-        /// Indicates if the runtime returns XR_ERROR_HANDLE_INVALID upon usage of invalid handles.
-        /// Note that as of 4/2019 the OpenXR specification is inconsistent in its requirement for
-        /// functions returning XR_ERROR_HANDLE_INVALID. Some functions must return it, some may, with
-        /// no rationale. Originally it was all must, but there was some debate...
+        /// Indicates if the runtime should be tested to ensure it returns XR_ERROR_HANDLE_INVALID
+        /// upon usage of invalid handles that are not undefined behavior to read.
+        /// The OpenXR specification does not require this because it cannot (uninitialized memory
+        /// used as a handle may trigger undefined behavior at the C level), but some runtimes will
+        /// attempt to identify bad handles where they can.
         /// Default is false.
         bool invalidHandleValidation{false};
 
@@ -209,8 +219,8 @@ namespace Conformance
 
     public:
         XrVersion apiVersion{XR_CURRENT_API_VERSION};
-        size_t testSuccessCount{};
-        size_t testFailureCount{};
+        uint64_t testSuccessCount{};
+        uint64_t testFailureCount{};
     };
 
     // A single place where all singleton data hangs off of.
@@ -326,9 +336,13 @@ namespace Conformance
         /// The interaction profiles that have been requested to be tested.
         StringVec enabledInteractionProfiles;
 
+        /// Whether each controller is to be used during testing
+        bool leftHandUnderTest{false};
+        bool rightHandUnderTest{false};
+
         /// Required instance creation extension struct, or nullptr.
         /// This is a pointer into IPlatformPlugin-provided memory.
-        XrBaseInStructure* requiredPlaformInstanceCreateStruct{};
+        XrBaseInStructure* requiredPlatformInstanceCreateStruct{};
     };
 
     /// Returns the default singleton global data.
@@ -440,7 +454,7 @@ FunctionType GetInstanceExtensionFunctionNoexcept(XrInstance instance, const cha
 /// This is not required by the spec, but some runtimes do it as it is permitted.
 #define OPTIONAL_INVALID_HANDLE_VALIDATION_INFO            \
     if (GetGlobalData().options.invalidHandleValidation) { \
-        INFO("Invalid handle validation (optional)")       \
+        INFO("Invalid handle validation (optional)");      \
     }                                                      \
     if (GetGlobalData().options.invalidHandleValidation)
 
@@ -454,7 +468,7 @@ FunctionType GetInstanceExtensionFunctionNoexcept(XrInstance instance, const cha
 /// Not all devices can do this.
 #define OPTIONAL_DISCONNECTABLE_DEVICE_INFO                  \
     if (!GetGlobalData().options.nonDisconnectableDevices) { \
-        INFO("Disconnectable device (optional)")             \
+        INFO("Disconnectable device (optional)");            \
     }                                                        \
     if (!GetGlobalData().options.nonDisconnectableDevices)
 
@@ -467,7 +481,7 @@ FunctionType GetInstanceExtensionFunctionNoexcept(XrInstance instance, const cha
 /// @}
 
 // Stringification for Catch2.
-// See https://github.com/catchorg/Catch2/blob/master/docs/tostring.md
+// See https://github.com/catchorg/Catch2/blob/devel/docs/tostring.md
 #define ENUM_CASE_STR(name, val) \
     case name:                   \
         return #name;
@@ -495,3 +509,39 @@ FunctionType GetInstanceExtensionFunctionNoexcept(XrInstance instance, const cha
 
 MAKE_ENUM_TO_STRING_FUNC(XrResult);
 MAKE_ENUM_TO_STRING_FUNC(XrSessionState);
+MAKE_ENUM_TO_STRING_FUNC(XrViewConfigurationType);
+MAKE_ENUM_TO_STRING_FUNC(XrVisibilityMaskTypeKHR);
+
+namespace Catch
+{
+    template <>
+    struct StringMaker<XrPosef>
+    {
+        static std::string convert(XrPosef const& value)
+        {
+            std::ostringstream oss;
+            oss << "[pos = (" << value.position.x;
+            oss << ", " << value.position.y;
+            oss << ", " << value.position.z;
+            oss << ") ori = (w=" << value.orientation.w;
+            oss << ", xyz=(" << value.orientation.x;
+            oss << ", " << value.orientation.y;
+            oss << ", " << value.orientation.z;
+            oss << ")]";
+            return oss.str();
+        }
+    };
+    template <>
+    struct StringMaker<XrVector3f>
+    {
+        static std::string convert(XrVector3f const& value)
+        {
+            std::ostringstream oss;
+            oss << "(" << value.x;
+            oss << ", " << value.y;
+            oss << ", " << value.z;
+            oss << ")";
+            return oss.str();
+        }
+    };
+}  // namespace Catch

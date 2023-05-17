@@ -1,4 +1,4 @@
-// Copyright (c) 2019-2022, The Khronos Group Inc.
+// Copyright (c) 2019-2023, The Khronos Group Inc.
 //
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -16,21 +16,23 @@
 
 #pragma once
 
+#include <initializer_list>
 #include "composition_utils.h"
 
 namespace Conformance
 {
     struct InputSourcePathData
     {
-        std::string Path;
+        const char* Path;
         XrActionType Type;
+        bool systemOnly;
     };
 
-    using InteractionProfileWhitelistData = std::vector<InputSourcePathData>;
+    using InputSourcePathCollection = std::initializer_list<InputSourcePathData>;
 
     // clang-format off
 
-    const InteractionProfileWhitelistData cSimpleControllerIPData{
+    const InputSourcePathCollection cSimpleControllerIPData{
         {"/user/hand/left/input/select/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/menu/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/grip/pose", XR_ACTION_TYPE_POSE_INPUT},
@@ -43,7 +45,7 @@ namespace Conformance
         {"/user/hand/right/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
     };
 
-    const InteractionProfileWhitelistData cGoogleDaydreamControllerIPData{
+    const InputSourcePathCollection cGoogleDaydreamControllerIPData{
         {"/user/hand/left/input/select/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/trackpad/x", XR_ACTION_TYPE_FLOAT_INPUT},
         {"/user/hand/left/input/trackpad/y", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -62,7 +64,8 @@ namespace Conformance
         {"/user/hand/right/input/aim/pose", XR_ACTION_TYPE_POSE_INPUT},
     };
 
-    const InteractionProfileWhitelistData cViveControllerIPData{
+    const InputSourcePathCollection cViveControllerIPData{
+        {"/user/hand/left/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/left/input/menu/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/squeeze/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/trigger/value", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -76,6 +79,7 @@ namespace Conformance
         {"/user/hand/left/input/grip/pose", XR_ACTION_TYPE_POSE_INPUT},
         {"/user/hand/left/input/aim/pose", XR_ACTION_TYPE_POSE_INPUT},
         {"/user/hand/left/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
+        {"/user/hand/right/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/right/input/menu/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/squeeze/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/trigger/value", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -91,13 +95,14 @@ namespace Conformance
         {"/user/hand/right/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
     };
 
-    const InteractionProfileWhitelistData cViveProIPData{
+    const InputSourcePathCollection cViveProIPData{
+        {"/user/head/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/head/input/volume_up/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/head/input/volume_down/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/head/input/mute_mic/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
     };
 
-    const InteractionProfileWhitelistData cWMRControllerIPData{
+    const InputSourcePathCollection cWMRControllerIPData{
         {"/user/hand/left/input/menu/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/squeeze/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/trigger/value", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -131,7 +136,7 @@ namespace Conformance
         {"/user/hand/right/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
     };
 
-    const InteractionProfileWhitelistData cGamepadIPData{
+    const InputSourcePathCollection cGamepadIPData{
         {"/user/gamepad/input/menu/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/gamepad/input/view/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/gamepad/input/a/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
@@ -160,7 +165,8 @@ namespace Conformance
         {"/user/gamepad/output/haptic_right_trigger", XR_ACTION_TYPE_VIBRATION_OUTPUT},
     };
 
-    const InteractionProfileWhitelistData cOculusGoIPData{
+    const InputSourcePathCollection cOculusGoIPData{
+        {"/user/hand/left/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/left/input/trigger/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/back/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/trackpad/x", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -170,6 +176,7 @@ namespace Conformance
         {"/user/hand/left/input/trackpad/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/grip/pose", XR_ACTION_TYPE_POSE_INPUT},
         {"/user/hand/left/input/aim/pose", XR_ACTION_TYPE_POSE_INPUT},
+        {"/user/hand/right/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/right/input/trigger/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/back/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/trackpad/x", XR_ACTION_TYPE_FLOAT_INPUT},
@@ -181,7 +188,7 @@ namespace Conformance
         {"/user/hand/right/input/aim/pose", XR_ACTION_TYPE_POSE_INPUT},
     };
 
-    const InteractionProfileWhitelistData cOculusTouchIPData{
+    const InputSourcePathCollection cOculusTouchIPData{
         {"/user/hand/left/input/x/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/x/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/y/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
@@ -204,8 +211,7 @@ namespace Conformance
         {"/user/hand/right/input/a/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/b/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/b/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
-        // The system ("Oculus") button is reserved for system applications
-        // {"/user/hand/right/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
+        {"/user/hand/right/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/right/input/squeeze/value", XR_ACTION_TYPE_FLOAT_INPUT},
         {"/user/hand/right/input/trigger/value", XR_ACTION_TYPE_FLOAT_INPUT},
         {"/user/hand/right/input/trigger/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
@@ -221,7 +227,9 @@ namespace Conformance
         {"/user/hand/right/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
     };
 
-    const InteractionProfileWhitelistData cValveIndexIPData{
+    const InputSourcePathCollection cValveIndexIPData{
+        {"/user/hand/left/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
+        {"/user/hand/left/input/system/touch", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/left/input/a/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/a/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/left/input/b/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
@@ -244,6 +252,8 @@ namespace Conformance
         {"/user/hand/left/input/grip/pose", XR_ACTION_TYPE_POSE_INPUT},
         {"/user/hand/left/input/aim/pose", XR_ACTION_TYPE_POSE_INPUT},
         {"/user/hand/left/output/haptic", XR_ACTION_TYPE_VIBRATION_OUTPUT},
+        {"/user/hand/right/input/system/click", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
+        {"/user/hand/right/input/system/touch", XR_ACTION_TYPE_BOOLEAN_INPUT, true},
         {"/user/hand/right/input/a/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/a/touch", XR_ACTION_TYPE_BOOLEAN_INPUT},
         {"/user/hand/right/input/b/click", XR_ACTION_TYPE_BOOLEAN_INPUT},
@@ -275,7 +285,7 @@ namespace Conformance
         std::string InteractionProfilePathString;
         std::string InteractionProfileShortname;
         std::vector<std::string> TopLevelPaths;
-        InteractionProfileWhitelistData WhitelistData;
+        InputSourcePathCollection InputSourcePaths;
     };
 
     // Define this separately as it is useful to reference directly
@@ -317,11 +327,65 @@ namespace Conformance
         virtual ~IInputTestDevice() = default;
         virtual XrPath TopLevelPath() const = 0;
 
-        virtual void SetDeviceActive(bool state, bool skipInteraction = false) = 0;
+        /// Set device active or inactive
+        ///
+        /// This will run xrSyncActions with an internally-defined action set to detect when the device is on/off!
+        /// (unless skipInteraction)
+        ///
+        /// @param state activation or deactivate device
+        /// @param skipInteraction Skip human interaction (i.e. this is a hint for the conformance extension)
+        /// @param detectionBoolAction Boolean action used to determine if device became active
+        /// @param detectionActionSet Action Set associated with detectionBoolAction
+        virtual void SetDeviceActive(bool state, bool skipInteraction = false, XrAction detectionBoolAction = XR_NULL_HANDLE,
+                                     XrActionSet detectionActionSet = XR_NULL_HANDLE) = 0;
+
+        /// Call xrLocateSpace until XR_SPACE_LOCATION_ORIENTATION_VALID matches the desired state
+        struct WaitUntilLosesOrGainsOrientationValidity
+        {
+            XrSpace actionSpace;
+            XrSpace baseSpace;
+            XrTime initialLocateTime;
+        };
+
+        /// When passed to IInputTestDevice::SetDeviceActive, will call xrSyncActions until a bool action
+        /// on the same controller reports isActive equal to the desired state.
+        struct WaitUntilBoolActionIsActiveUpdated
+        {
+            XrAction detectionBoolAction = XR_NULL_HANDLE;
+            XrActionSet detectionActionSet = XR_NULL_HANDLE;
+        };
+
+        /// Set device active or inactive (displaying message), but do not wait.
+        ///
+        /// Will use conformance automation extension if available.
+        ///
+        /// @param state activation or deactivate device
+        /// @param extraMessage text to append to the end of the message, if any.
+        virtual void SetDeviceActiveWithoutWaiting(bool state, const char* extraMessage = nullptr) const = 0;
+
+        /// Loop while running xrSyncActions, until an action reports its active state matching @p state.
+        ///
+        /// @param state whether to await activation or deactivation of device
+        /// @param waitCondition Tag struct with optional parameters
+        virtual void Wait(bool state, const WaitUntilBoolActionIsActiveUpdated& waitCondition) const = 0;
+
+        /// Loop while running xrLocateSpace, until the presence or absence of XR_SPACE_LOCATION_ORIENTATION_VALID
+        /// matches the @p state.
+        ///
+        /// @param state whether to await activation or deactivation of device
+        /// @param waitCondition Tag struct with required parameters
+        virtual XrTime Wait(bool state, const WaitUntilLosesOrGainsOrientationValidity& waitCondition) const = 0;
+
+        /// This will run xrSyncActions with an internally-defined action set to wait until the state occurs!
+        /// (unless skipInteraction is true)
         virtual void SetButtonStateBool(XrPath button, bool state, bool skipInteraction = false,
                                         XrActionSet extraActionSet = XR_NULL_HANDLE) = 0;
+        /// This will run xrSyncActions with an internally-defined action set to wait until the state occurs!
+        /// (unless skipInteraction is true)
         virtual void SetButtonStateFloat(XrPath button, float state, float epsilon = 0, bool skipInteraction = false,
                                          XrActionSet extraActionSet = XR_NULL_HANDLE) = 0;
+        /// This will run xrSyncActions with an internally-defined action set to wait until the state occurs!
+        /// (unless skipInteraction is true)
         virtual void SetButtonStateVector2(XrPath button, XrVector2f state, float epsilon = 0, bool skipInteraction = false,
                                            XrActionSet extraActionSet = XR_NULL_HANDLE) = 0;
     };
@@ -333,12 +397,14 @@ namespace Conformance
         virtual void DisplayMessage(const std::string& message) = 0;
 
         virtual void IterateFrame() = 0;
+
+        // virtual XrTime GetLastPredictedDisplayTime() const = 0;
     };
 
     std::unique_ptr<IInputTestDevice> CreateTestDevice(ITestMessageDisplay* const messageDisplay,
                                                        InteractionManager* const interactionManager, XrInstance instance, XrSession session,
                                                        XrPath interactionProfile, XrPath topLevelPath,
-                                                       const InteractionProfileWhitelistData& interactionProfilePaths);
+                                                       const InputSourcePathCollection& interactionProfilePaths);
 
     std::unique_ptr<IInputTestDevice> CreateTestDevice(ITestMessageDisplay* const messageDisplay, XrInstance instance, XrSession session,
                                                        XrPath interactionProfile, XrPath topLevelPath, XrActionSet actionSet,

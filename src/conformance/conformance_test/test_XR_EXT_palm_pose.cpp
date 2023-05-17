@@ -23,7 +23,7 @@
 #include "conformance_framework.h"
 #include "throw_helpers.h"
 #include "composition_utils.h"
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <openxr/openxr.h>
 #include <xr_linear.h>
 
@@ -37,7 +37,7 @@ namespace Conformance
     constexpr XrVector3f Up{0, 1, 0};
 
     // Purpose: Ensure that the action space for palm can be used for placing a hand representation.
-    TEST_CASE("XR_EXT_palm_pose", "[scenario][interactive]")
+    TEST_CASE("XR_EXT_palm_pose", "[scenario][interactive][no_auto]")
     {
         GlobalData& globalData = GetGlobalData();
         if (!globalData.IsInstanceExtensionSupported("XR_EXT_palm_pose")) {
@@ -375,14 +375,15 @@ namespace Conformance
 
                 // Render into each view port of the wide swapchain using the projection layer view fov and pose.
                 for (size_t view = 0; view < views.size(); view++) {
-                    compositionHelper.AcquireWaitReleaseImage(
-                        swapchains[view],  //
-                        [&](const XrSwapchainImageBaseHeader* swapchainImage, uint64_t format) {
-                            GetGlobalData().graphicsPlugin->ClearImageSlice(swapchainImage, 0, format);
-                            const_cast<XrFovf&>(projLayer->views[view].fov) = views[view].fov;
-                            const_cast<XrPosef&>(projLayer->views[view].pose) = views[view].pose;
-                            GetGlobalData().graphicsPlugin->RenderView(projLayer->views[view], swapchainImage, format, renderedCubes);
-                        });
+                    compositionHelper.AcquireWaitReleaseImage(swapchains[view],  //
+                                                              [&](const XrSwapchainImageBaseHeader* swapchainImage) {
+                                                                  GetGlobalData().graphicsPlugin->ClearImageSlice(swapchainImage);
+                                                                  const_cast<XrFovf&>(projLayer->views[view].fov) = views[view].fov;
+                                                                  const_cast<XrPosef&>(projLayer->views[view].pose) = views[view].pose;
+                                                                  GetGlobalData().graphicsPlugin->RenderView(
+                                                                      projLayer->views[view], swapchainImage,
+                                                                      RenderParams().Draw(renderedCubes));
+                                                              });
                 }
 
                 layers.push_back({reinterpret_cast<XrCompositionLayerBaseHeader*>(projLayer)});

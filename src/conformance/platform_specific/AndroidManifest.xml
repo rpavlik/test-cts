@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-		package="com.khronos.openxr.cts"
+		package="org.khronos.openxr.cts"
 		android:versionCode="1"
 		android:versionName="1.0" android:installLocation="auto" >
 <!--
-Copyright (c) 2017-2022, The Khronos Group Inc.
+Copyright (c) 2017-2023, The Khronos Group Inc.
 
 SPDX-License-Identifier: Apache-2.0
 -->
@@ -15,6 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.VIBRATE" />
 	<uses-permission android:name="org.khronos.openxr.permission.OPENXR" />
 	<uses-permission android:name="org.khronos.openxr.permission.OPENXR_SYSTEM" />
     <queries>
