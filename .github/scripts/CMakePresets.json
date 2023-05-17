@@ -72,7 +72,7 @@
             "hidden": true,
             "installDir": "$env{INSTALL_DIR}",
             "cacheVariables": {
-                "DYNAMIC_LOADER": true,
+                "DYNAMIC_LOADER": false,
                 "BUILD_ALL_EXTENSIONS": true
             },
             "condition": {

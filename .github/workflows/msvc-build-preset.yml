@@ -55,4 +55,4 @@ jobs:
         if: inputs.artifactName
         with:
           name: "${{ inputs.artifactName }}"
-          path: "${{ github.workspace }}/install"
+          path: "${{ github.workspace }}/install/conformance"
