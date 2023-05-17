@@ -1,18 +1,13 @@
-# Copyright 2021-2022, Collabora, Ltd.
+# Copyright 2021-2023, Collabora, Ltd.
 # SPDX-License-Identifier: CC0-1.0
 
-name: Build release artifacts
+name: Build Windows release artifacts
 on:
   release:
     types: [published]
   workflow_dispatch:
 
 jobs:
-  android:
-    uses: ./.github/workflows/android.yml
-    with:
-      release: true
-
   msvc-build:
     strategy:
       fail-fast: true
@@ -21,30 +16,8 @@ jobs:
           - win32
           - x64
 
-    uses: ./.github/workflows/msvc-build-preset.yml
+    uses: "./.github/workflows/msvc-build-preset.yml"
     with:
-      preset: ${{ matrix.preset }}
-      artifactName: "loader_${{ matrix.preset }}"
+      preset: "${{ matrix.preset }}"
+      artifactName: "openxr-cts-${{ matrix.preset }}"
 
-
-  organize-and-release-artifacts:
-    if: inputs.organizeAndRelease
-    needs:
-      - msvc-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Retrieve artifacts
-        uses: actions/download-artifact@v3
-        with:
-          path: artifacts
-
-      - name: Organize artifacts
-        run: python .github/scripts/organize_windows_artifacts.py "${{ github.workspace }}" "${{ github.workspace }}/openxr_loader"
-
-      - name: Upload combined artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: openxr_loader_windows
-          path: "${{ github.workspace }}/openxr_loader"
