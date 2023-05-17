@@ -13,8 +13,8 @@ jobs:
       fail-fast: true
       matrix:
         preset:
-          - win32
-          - x64
+          - cts-win32
+          - cts-x64
 
     uses: "./.github/workflows/msvc-build-preset.yml"
     with:
